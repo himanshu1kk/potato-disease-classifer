@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Potato Disease Classifier</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .upload-container {
+            border: 2px dashed #ccc;
+            padding: 40px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        #preview {
+            max-width: 100%;
+            max-height: 300px;
+            margin: 20px 0;
+            display: none;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        .progress {
+            display: none;
+            margin: 20px 0;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h1>Potato Disease Classifier</h1>
+    <p>Upload an image of a potato leaf to check for diseases</p>
+    
+    <div class="upload-container">
+        <input type="file" id="fileInput" accept="image/*" style="display: none;">
+        <button onclick="document.getElementById('fileInput').click()">Choose Image</button>
+        <p>or drag and drop image here</p>
+        <img id="preview" alt="Image Preview">
+    </div>
+    
+    <button id="predictBtn" onclick="predict()" disabled>Predict</button>
+    
+    <div class="progress" id="progress">
+        <div class="spinner"></div>
+        <p>Analyzing image... Please wait</p>
+    </div>
+    
+    <div id="result"></div>
+
+    <script>
+        // Update UI when file is selected
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const preview = document.getElementById('preview');
+                const reader = new FileReader();
+                
+                reader.onload = function(event) {
+                    preview.src = event.target.result;
+                    preview.style.display = 'block';
+                    document.getElementById('predictBtn').disabled = false;
+                }
+                
+                reader.readAsDataURL(file);
+
+                // Validate file type and size
+                const fileType = file.type.split('/')[0];
+                const maxSize = 5 * 1024 * 1024; // 5MB
+
+                if (fileType !== 'image') {
+                    showResult('Please upload a valid image file (JPEG, PNG).', 'error');
+                    document.getElementById('predictBtn').disabled = true;
+                    return;
+                }
+
+                if (file.size > maxSize) {
+                    showResult('File size is too large. Please upload a smaller image.', 'error');
+                    document.getElementById('predictBtn').disabled = true;
+                    return;
+                }
+            }
+        });
+
+        // Handle drag and drop
+        const uploadContainer = document.querySelector('.upload-container');
+        
+        uploadContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadContainer.style.borderColor = '#4CAF50';
+            uploadContainer.style.backgroundColor = '#f8f8f8';
+        });
+        
+        uploadContainer.addEventListener('dragleave', () => {
+            uploadContainer.style.borderColor = '#ccc';
+            uploadContainer.style.backgroundColor = 'transparent';
+        });
+        
+        uploadContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadContainer.style.borderColor = '#ccc';
+            uploadContainer.style.backgroundColor = 'transparent';
+            
+            const fileInput = document.getElementById('fileInput');
+            fileInput.files = e.dataTransfer.files;
+            
+            // Trigger change event
+            const event = new Event('change');
+            fileInput.dispatchEvent(event);
+        });
+
+        async function predict() {
+            const fileInput = document.getElementById('fileInput');
+            const resultDiv = document.getElementById('result');
+            const progressDiv = document.getElementById('progress');
+            
+            if (!fileInput.files.length) {
+                showResult('Please select an image first.', 'error');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            resultDiv.style.display = 'none';
+            progressDiv.style.display = 'block';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                // Replace with your ngrok URL (get from Colab output)
+                const apiUrl = "https://0323-34-125-28-34.ngrok-free.app/predict/";  // Update with your URL
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                showResult(`
+                    <h3>Result: ${data.predicted_class}</h3>
+                    <p>Confidence: ${Math.round(data.confidence * 100)}%</p>
+                    <div class="probabilities">
+                        <h4>Probabilities:</h4>
+                        <ul>
+                            ${Object.entries(data.class_probabilities).map(([cls, prob]) => 
+                                `<li>${cls}: ${Math.round(prob * 100)}%</li>`
+                            ).join('')}
+                        </ul>
+                    </div>
+                `, 'success');
+                
+            } catch (err) {
+                showResult(`Error: ${err.message}`, 'error');
+            } finally {
+                progressDiv.style.display = 'none';
+            }
+        }
+
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = message;
+            resultDiv.className = type;
+            resultDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
